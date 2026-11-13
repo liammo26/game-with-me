@@ -186,7 +186,7 @@ h5 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08
 /* ---------- party ---------- */
 .members { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 .member { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; }
-.member .avatar { width: 28px; height: 28px; font-size: 13px; }
+.member .mini { width: 38px; }
 .member em { font-style: normal; font-size: 11px; color: var(--green); border: 1px solid var(--green-dim); border-radius: 6px; padding: 0 5px; }
 .invite { padding-top: 10px; border-top: 1px solid var(--line); }
 .steps { margin: 0; padding-left: 20px; color: var(--muted); display: grid; gap: 6px; }

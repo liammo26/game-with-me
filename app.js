@@ -158,7 +158,7 @@ function supabaseApi() {
           ...p,
           code: (invites.find((i) => i.party_id === p.id) || {}).code || '',
           members: members.filter((m) => m.party_id === p.id)
-            .map((m) => ({ id: m.user_id, username: m.profiles ? m.profiles.username : '?' }))
+            .map((m) => ({ id: m.user_id, username: m.profiles ? m.profiles.username : '?', look: m.profiles ? m.profiles.controller : null }))
             .sort((a, b) => a.username.localeCompare(b.username))
         })),
         sessions: sessions.map((s) => ({
@@ -227,7 +227,7 @@ function demoApi() {
   const planned = new Set();          // every slot ever ticked; unticking does not remove it
   const cast = { u1: [31, 12, { body: 'purple', buttons: 'white' }], u2: [14, 27, { body: 'crimson', buttons: 'pink', ring: 'cyan' }], u3: [6, 8, { body: 'ice' }] };
   const seed = () => ({
-    parties: [{ id: 'p1', name: 'The Squad', owner_id: 'me', code: 'SQ4D42', members: [...friends] }],
+    parties: [{ id: 'p1', name: 'The Squad', owner_id: 'me', code: 'SQ4D42', members: friends.map((f) => ({ ...f, look: cast[f.id][2] })) }],
     sessions: [{ id: 's1', user_id: 'u1', username: 'Sam', platform: PLATFORMS[0], started_at: ago(12), look: cast.u1[2],
       responses: [{ user_id: 'u2', username: 'Priya', text: 'Will be 30', created_at: ago(8) }] }],
     availability: [['u1', 0, 'eve'], ['u2', 0, 'eve'], ['u3', 1, 'eve'], ['u1', 1, 'eve'], ['u2', 2, 'pm'], ['u1', 4, 'eve'],
@@ -581,7 +581,7 @@ function partyView() {
     const owner = p.owner_id === me().id;
     return `<article class="card">
       <header class="row between"><h4>${esc(p.name)}</h4><span class="muted small">${p.members.length} ${p.members.length === 1 ? 'member' : 'members'}</span></header>
-      <div class="members">${p.members.map((m) => `<span class="member"><span class="avatar">${initial(m.username)}</span>${esc(m.username)}${m.id === p.owner_id ? ' <em>host</em>' : ''}</span>`).join('')}</div>
+      <div class="members">${p.members.map((m) => `<span class="member"><span class="mini on">${controllerSvg(m.id === me().id ? me().look : m.look)}</span>${esc(m.username)}${m.id === p.owner_id ? ' <em>host</em>' : ''}</span>`).join('')}</div>
       <div class="row between invite"><span class="muted small">Invite code <code>${esc(p.code)}</code></span>
         <span class="row"><button class="btn sm" data-act="share" data-id="${p.id}">Share invite</button>
         <button class="btn sm danger" data-act="leave" data-id="${p.id}">${owner ? 'Delete' : 'Leave'}</button></span></div>

@@ -1,5 +1,5 @@
 // Game With Me service worker: receives push messages and keeps the app shell available offline.
-const CACHE = 'wg-v6';
+const CACHE = 'wg-v7';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'vendor/supabase.js',
   'manifest.webmanifest', 'icons/icon-192.png'];
 
