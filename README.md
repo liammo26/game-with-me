@@ -96,7 +96,7 @@ Whenever `supabase/schema.sql` or `supabase/functions/notify/index.ts` changes, 
 
 - **Add Xbox, PC or Switch:** edit `PLATFORMS` in `config.js`, for example `['PlayStation', 'Xbox']`. A picker appears above the controller.
 - **Default replies:** `DEFAULT_REPLIES` at the top of `app.js`.
-- **After editing app files:** bump `CACHE` in `sw.js` (`wg-v6` to `wg-v7`) so phones drop the old offline copy.
+- **After editing app files:** raise `BUILD` at the top of `app.js` by one. Settings shows it as "Version N", so you can tell which version a phone is running. Phones pick up new files the next time the app is opened, and an app left open shows a "New version ready" bar.
 
 ## Troubleshooting
 

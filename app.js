@@ -10,6 +10,7 @@ const SLOTS = [['am', 'AM', 'morning'], ['pm', 'PM', 'afternoon'], ['eve', 'Eve'
 const SESSION_MS = 60 * 60 * 1000;   // an "I'm on" status clears itself after one hour
 const RING = 2 * Math.PI * 47;       // length of the circle drawn round the controller
 const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
+const BUILD = 9;                    // shown in Settings, so you can tell which version a phone is running
 
 /* ---------- controller looks and the trophies that unlock them ---------- */
 // Each look is [label, colour]. The first in each group is the free default.
@@ -701,7 +702,8 @@ function settingsView() {
   }[state.push];
   const install = isStandalone ? '' : state.installEvt
     ? `<h3>Install</h3><div class="card"><p class="muted">Put Game With Me on your home screen for one-tap access.</p><button class="btn primary" data-act="install">Add to home screen</button></div>`
-    : (isIOS && state.push !== 'needs-install' ? `<h3>Install</h3><div class="card"><p class="muted">In Safari tap <b>Share</b>, then <b>Add to Home Screen</b>.</p></div>` : '');
+    : (isIOS ? (state.push !== 'needs-install' ? `<h3>Install</h3><div class="card"><p class="muted">In Safari tap <b>Share</b>, then <b>Add to Home Screen</b>.</p></div>` : '')
+      : `<h3>Install</h3><div class="card"><p class="muted">Open your browser's menu (the three dots) and choose <b>Add to Home screen</b> or <b>Install app</b>.</p></div>`);
   const custom = me().custom_replies;
   return `<h2 class="title">Settings</h2><p class="muted small lead">Signed in as ${esc(me().username)}. Friends find you by this username.</p>
     <h3>Notifications</h3><div class="card">${push}</div>
@@ -712,7 +714,8 @@ function settingsView() {
         ${custom.map((r, i) => `<button class="chip active" data-act="delreply" data-i="${i}" aria-label="Remove ${esc(r)}">${esc(r)} ✕</button>`).join('')}</div>
       <form data-form="addreply" class="row"><input name="text" maxlength="40" placeholder="Add your own" required><button class="btn">Add</button></form>
     </div>
-    <button class="btn wide" data-act="signout">Sign out</button>`;
+    <button class="btn wide" data-act="signout">Sign out</button>
+    <p class="muted small ver">Version ${BUILD}</p>`;
 }
 
 /* =====================================================================
@@ -727,7 +730,7 @@ async function checkPush() {
   else if (DEMO) state.push = 'on';
   else {
     try {
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await swReady();
       const sub = await reg.pushManager.getSubscription();
       state.push = sub ? 'on' : 'off';
       if (sub) api.savePushSub(sub).catch(() => {});   // keeps the server copy fresh
@@ -736,14 +739,32 @@ async function checkPush() {
 }
 
 // Must run from a tap: iOS only shows the permission prompt in response to one.
+// Waits for the service worker, registering it again if the phone has lost it, and gives up
+// with a clear message instead of hanging.
+async function swReady() {
+  if (!('serviceWorker' in navigator)) throw new Error('This browser cannot receive notifications');
+  if (!(await navigator.serviceWorker.getRegistration())) await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+  return Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((_, fail) => setTimeout(() => fail(new Error('The app is still setting up. Close it fully, open it again and retry.')), 8000))
+  ]);
+}
+
+// Subscribes this device and tells the server. "fresh" throws away any old subscription first,
+// which repairs one the push service no longer accepts.
+async function subscribePush(fresh) {
+  const reg = await swReady();
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && fresh) { await sub.unsubscribe().catch(() => {}); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.VAPID_PUBLIC_KEY) });
+  await api.savePushSub(sub);
+}
+
 async function enablePush() {
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') { await checkPush(); render(); return; }
   if (!DEMO) {
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription()
-      || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.VAPID_PUBLIC_KEY) });
-    await api.savePushSub(sub);
+    try { await subscribePush(false); } catch (_) { await subscribePush(true); }
   }
   await checkPush();
   render();
@@ -835,13 +856,20 @@ const actions = {
   },
   async push() { await enablePush(); },
   async test() {
-    const res = await api.notify({ type: 'test' });
-    toast(res && res.sent ? 'Test sent. It should arrive in a moment.' : 'No device is subscribed yet');
+    let res = await api.notify({ type: 'test' });
+    if (!DEMO && !(res && res.sent)) {            // nothing got through: re-subscribe this device and try once more
+      await subscribePush(true);
+      res = await api.notify({ type: 'test' });
+    }
+    toast(res && res.sent ? 'Test sent. It should arrive in a moment.'
+      : res && res.failed ? 'The push service rejected the test. Check the notification keys in Supabase match config.js.'
+        : 'This device could not be subscribed. Check notifications are allowed for this app in your phone settings.');
   },
   async install() {
-    state.installEvt.prompt();
-    await state.installEvt.userChoice;
-    state.installEvt = null;
+    const evt = state.installEvt;
+    state.installEvt = null;                      // the browser lets each prompt be used once only
+    try { await evt.prompt(); await evt.userChoice; }
+    catch (_) { toast("Use your browser's menu instead: Add to Home screen, or Install app."); }
     render();
   },
   async delreply(el) {
@@ -919,6 +947,7 @@ document.addEventListener('click', async (e) => {
   const key = JSON.stringify(el.dataset);
   if (inFlight.has(key)) return;
   inFlight.add(key);
+  setTimeout(() => inFlight.delete(key), 12000);   // never leave a button dead if something hangs
   try { await actions[el.dataset.act](el); } catch (err) { console.error(err); toast(err.message || 'Something went wrong'); scheduleRefresh(); }
   inFlight.delete(key);
 });
@@ -951,12 +980,37 @@ async function enter() {
   api.onChange(scheduleRefresh);
 }
 
+// Spots a newer copy of the app on the server and offers a one-tap update, so nobody is
+// left on an old version because the app was only sent to the background, never closed.
+let bootTag = null;
+let lastUpdateCheck = 0;
+async function checkForUpdate() {
+  if (location.protocol === 'file:' || Date.now() - lastUpdateCheck < 60000 || $('#update')) return;
+  lastUpdateCheck = Date.now();
+  let tag = null;
+  try {
+    const res = await fetch('app.js', { method: 'HEAD', cache: 'no-store' });
+    tag = res.ok ? (res.headers.get('etag') || res.headers.get('last-modified')) : null;
+  } catch (_) { return; }
+  if (!tag) return;
+  if (bootTag === null) { bootTag = tag; return; }
+  if (tag === bootTag) return;
+  const bar = document.createElement('button');
+  bar.id = 'update';
+  bar.textContent = 'New version ready. Tap to update.';
+  bar.onclick = () => location.reload();
+  document.body.appendChild(bar);
+}
+
 async function boot() {
   const join = new URLSearchParams(location.search).get('join');
   if (join) { store.set('wg-join', join.toUpperCase()); history.replaceState(null, '', location.pathname); }
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker failed', err));
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then((reg) => reg.update().catch(() => {}))
+      .catch((err) => console.warn('Service worker failed', err));
+    checkForUpdate();
   }
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installEvt = e; if (state.authed && state.view === 'settings') render(); });
   document.addEventListener('keydown', (e) => {
@@ -968,7 +1022,7 @@ async function boot() {
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRefresh(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { scheduleRefresh(); checkForUpdate(); } });
   setInterval(() => { if (!document.hidden) scheduleRefresh(); }, 60000);
   // Every few seconds: shrink the ring, and clear anyone whose hour is up.
   setInterval(() => {

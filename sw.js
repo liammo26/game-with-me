@@ -1,5 +1,5 @@
 // Game With Me service worker: receives push messages and keeps the app shell available offline.
-const CACHE = 'wg-v7';
+const CACHE = 'wg-v9';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'vendor/supabase.js',
   'manifest.webmanifest', 'icons/icon-192.png'];
 
@@ -15,12 +15,13 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Network first, so updates show up straight away; cache only as an offline fallback.
+// Network first, and always checked with the server (never the phone's own stale copy),
+// so an update shows up the next time the app is opened. Cache is only an offline fallback.
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(new Request(e.request, { cache: 'no-cache' }))
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
         return res;
